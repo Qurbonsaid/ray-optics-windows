@@ -4,7 +4,7 @@
   "description": "Ray Optics Simulation Gallery - Portable App for Smart Monitors",
   "main": "main.js",
   "scripts": {
-    "download": "node scripts/download-release.js && node scripts/setup-icon.js",
+    "download": "node scripts/download-release.js",
     "prebuild": "npm run download",
     "prestart": "npm run download",
     "start": "electron .",
@@ -29,6 +29,7 @@
       "main.js",
       "preload.js",
       "icon.png",
+      "icon.ico",
       "www/**/*"
     ],
     "win": {
@@ -41,7 +42,7 @@
           ]
         }
       ],
-      "icon": "icon.png"
+      "icon": "icon.ico"
     },
     "portable": {
       "artifactName": "RayOpticsGallery-Portable.exe"
