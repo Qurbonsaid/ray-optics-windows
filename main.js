@@ -21,10 +21,9 @@ const WWW_DIR = path.join(__dirname, "www");
  */
 function getIconPath() {
   const iconPaths = [
-    path.join(__dirname, "icon.png"),
     path.join(__dirname, "icon.ico"),
+    path.join(__dirname, "icon.png"),
     path.join(WWW_DIR, "img", "icon.png"),
-    path.join(__dirname, "assets", "icon.png"),
   ];
 
   for (const iconPath of iconPaths) {
@@ -40,6 +39,7 @@ function getIconPath() {
 
 /**
  * Resolve absolute paths (like /gallery or /simulator) to local files
+ * Fixed to properly handle Windows paths and path traversal security
  */
 function resolveAbsolutePath(requestPath) {
   // Remove leading slash and normalize
@@ -49,21 +49,24 @@ function resolveAbsolutePath(requestPath) {
   normalizedPath = normalizedPath.replace(/^[a-zA-Z]:/, "");
   normalizedPath = normalizedPath.replace(/^\/+/, "");
 
-  // If path is empty, default to index.html
+  // If path is empty, default to gallery index
   if (!normalizedPath) {
-    normalizedPath = "index.html";
+    normalizedPath = "gallery/index.html";
   }
 
   // Construct full path
   let fullPath = path.join(WWW_DIR, normalizedPath);
 
-  // Normalize to handle .. and . in paths
-  fullPath = path.normalize(fullPath);
+  // Normalize and resolve to handle .. and . in paths
+  fullPath = path.resolve(fullPath);
 
-  // Security: ensure we're still within WWW_DIR
-  if (!fullPath.startsWith(WWW_DIR)) {
+  // SECURITY FIX: Use path.resolve for proper comparison on Windows
+  const normalizedWWW = path.resolve(WWW_DIR);
+
+  // Ensure we're still within WWW_DIR (prevent path traversal)
+  if (!fullPath.startsWith(normalizedWWW + path.sep) && fullPath !== normalizedWWW) {
     console.warn("Path escapes www directory, redirecting to gallery");
-    fullPath = path.join(WWW_DIR, "gallery", "index.html");
+    return path.join(WWW_DIR, "gallery", "index.html");
   }
 
   // If it's a directory, look for index.html
@@ -95,6 +98,36 @@ function extractPathFromPhydemoUrl(phydemoPath) {
   return localPath;
 }
 
+/**
+ * Navigate to a local file with proper error handling
+ */
+function navigateToLocalFile(filePath, hash = "") {
+  if (fs.existsSync(filePath)) {
+    console.log("Navigating to:", filePath, hash ? `with hash: ${hash}` : "");
+    mainWindow.loadFile(filePath).then(() => {
+      if (hash) {
+        // Escape hash for safe JavaScript execution
+        const safeHash = hash.replace(/["\\]/g, '\\$&');
+        mainWindow.webContents.executeJavaScript(
+          `window.location.hash = "${safeHash}";`
+        ).catch(err => console.error("Failed to set hash:", err));
+      }
+    }).catch(err => {
+      console.error("Failed to load file:", filePath, err);
+    });
+  } else {
+    console.error("File not found:", filePath);
+    // Fallback to gallery if file doesn't exist
+    const fallback = path.join(WWW_DIR, "gallery", "index.html");
+    if (fs.existsSync(fallback)) {
+      console.log("Falling back to gallery");
+      mainWindow.loadFile(fallback).catch(err => {
+        console.error("Failed to load fallback:", err);
+      });
+    }
+  }
+}
+
 function createWindow() {
   // Get primary display dimensions for fullscreen kiosk mode (ideal for smart monitors)
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -120,114 +153,100 @@ function createWindow() {
   Menu.setApplicationMenu(null);
 
   // Load the gallery page directly
-  mainWindow.loadFile(path.join(WWW_DIR, "gallery", "index.html"));
+  const galleryPath = path.join(WWW_DIR, "gallery", "index.html");
+  mainWindow.loadFile(galleryPath).catch(err => {
+    console.error("Failed to load gallery:", err);
+  });
 
   // Handle navigation to intercept absolute paths and external links
   mainWindow.webContents.on("will-navigate", (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
+    try {
+      const parsedUrl = new URL(navigationUrl);
 
-    // Handle external links - open in system browser
-    if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
-      // Check if it's an external site (not phydemo.app which is the canonical URL in the HTML)
-      if (!navigationUrl.includes("phydemo.app")) {
+      // Handle external links - open in system browser
+      if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
         event.preventDefault();
-        shell.openExternal(navigationUrl);
+
+        // Check if it's phydemo.app (canonical URL in HTML)
+        if (navigationUrl.includes("phydemo.app")) {
+          // Convert phydemo.app URLs to local file
+          const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
+          const resolvedPath = resolveAbsolutePath(localPath);
+          navigateToLocalFile(resolvedPath, parsedUrl.hash);
+        } else {
+          // External site - open in system browser
+          shell.openExternal(navigationUrl).catch(err => {
+            console.error("Failed to open external URL:", err);
+          });
+        }
         return;
       }
 
-      // For phydemo.app URLs, convert to local file
-      event.preventDefault();
-      // Extract path, removing /ray-optics prefix
-      const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
-      const resolvedPath = resolveAbsolutePath(localPath);
+      // Handle file:// URLs with absolute paths
+      if (parsedUrl.protocol === "file:") {
+        // Decode the file path properly
+        let filePath = decodeURIComponent(parsedUrl.pathname);
 
-      if (fs.existsSync(resolvedPath)) {
-        // Preserve hash for simulator (e.g., /simulator/#convex-lens)
-        const hash = parsedUrl.hash || "";
-        mainWindow.loadFile(resolvedPath).then(() => {
-          if (hash) {
-            mainWindow.webContents.executeJavaScript(
-              `window.location.hash = "${hash}";`
-            );
-          }
-        });
-      } else {
-        console.error("File not found:", resolvedPath);
-      }
-      return;
-    }
+        // Fix Windows file paths (remove leading slash from /C:/...)
+        if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(filePath)) {
+          filePath = filePath.substring(1);
+        }
 
-    // Handle file:// URLs with absolute paths
-    if (parsedUrl.protocol === "file:") {
-      const filePath = parsedUrl.pathname;
+        // Check if it's trying to navigate outside www directory
+        const normalizedFilePath = path.resolve(filePath);
+        const normalizedWWW = path.resolve(WWW_DIR);
 
-      // Check if it's trying to navigate to an absolute path outside www
-      // This happens when HTML has href="/gallery" type links
-      if (!filePath.includes(WWW_DIR) && !filePath.includes("www")) {
-        event.preventDefault();
+        if (!normalizedFilePath.startsWith(normalizedWWW + path.sep) &&
+            normalizedFilePath !== normalizedWWW) {
+          event.preventDefault();
 
-        // Try to find the path relative to our www folder
-        const resolvedPath = resolveAbsolutePath(filePath);
-
-        if (fs.existsSync(resolvedPath)) {
-          const hash = parsedUrl.hash || "";
-          mainWindow.loadFile(resolvedPath).then(() => {
-            if (hash) {
-              mainWindow.webContents.executeJavaScript(
-                `window.location.hash = "${hash}";`
-              );
-            }
-          });
-        } else {
-          console.error("Cannot resolve path:", filePath, "->", resolvedPath);
+          // Try to resolve it relative to www folder
+          const resolvedPath = resolveAbsolutePath(parsedUrl.pathname);
+          navigateToLocalFile(resolvedPath, parsedUrl.hash);
         }
       }
+    } catch (err) {
+      console.error("Navigation error:", err);
+      event.preventDefault();
     }
   });
 
   // Handle new window requests (target="_blank" links)
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-    const parsedUrl = new URL(targetUrl);
+    try {
+      const parsedUrl = new URL(targetUrl);
 
-    // External links open in system browser
-    if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
-      if (!targetUrl.includes("phydemo.app")) {
-        shell.openExternal(targetUrl);
+      // External links open in system browser
+      if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
+        if (targetUrl.includes("phydemo.app")) {
+          // For phydemo.app URLs, open locally in the same window
+          const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
+          const resolvedPath = resolveAbsolutePath(localPath);
+          navigateToLocalFile(resolvedPath, parsedUrl.hash);
+        } else {
+          // External site
+          shell.openExternal(targetUrl).catch(err => {
+            console.error("Failed to open external URL:", err);
+          });
+        }
         return { action: "deny" };
       }
 
-      // For phydemo.app URLs, open locally in the same window
-      const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
-      const resolvedPath = resolveAbsolutePath(localPath);
-      const hash = parsedUrl.hash || "";
+      // For file:// URLs, handle in same window
+      if (parsedUrl.protocol === "file:") {
+        let filePath = decodeURIComponent(parsedUrl.pathname);
 
-      if (fs.existsSync(resolvedPath)) {
-        mainWindow.loadFile(resolvedPath).then(() => {
-          if (hash) {
-            mainWindow.webContents.executeJavaScript(
-              `window.location.hash = "${hash}";`
-            );
-          }
-        });
+        // Fix Windows file paths
+        if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(filePath)) {
+          filePath = filePath.substring(1);
+        }
+
+        const resolvedPath = resolveAbsolutePath(filePath);
+        navigateToLocalFile(resolvedPath, parsedUrl.hash);
+        return { action: "deny" };
       }
-      return { action: "deny" };
-    }
-
-    // For file:// URLs, handle in same window
-    if (parsedUrl.protocol === "file:") {
-      const resolvedPath = resolveAbsolutePath(parsedUrl.pathname);
-      const hash = parsedUrl.hash || "";
-
-      if (fs.existsSync(resolvedPath)) {
-        mainWindow.loadFile(resolvedPath).then(() => {
-          if (hash) {
-            mainWindow.webContents.executeJavaScript(
-              `window.location.hash = "${hash}";`
-            );
-          }
-        });
-      }
-      return { action: "deny" };
+    } catch (err) {
+      console.error("Window open error:", err);
     }
 
     return { action: "deny" };
@@ -263,7 +282,18 @@ function createWindow() {
     "did-fail-load",
     (event, errorCode, errorDescription, validatedURL) => {
       console.error("Failed to load:", validatedURL);
-      console.error("Error:", errorDescription);
+      console.error("Error code:", errorCode, "Description:", errorDescription);
+
+      // Try to recover by loading gallery
+      if (errorCode !== 0 && errorCode !== -3) { // -3 is ERR_ABORTED (normal for prevented navigation)
+        const fallback = path.join(WWW_DIR, "gallery", "index.html");
+        if (fs.existsSync(fallback)) {
+          console.log("Attempting recovery by loading gallery");
+          mainWindow.loadFile(fallback).catch(err => {
+            console.error("Recovery failed:", err);
+          });
+        }
+      }
     }
   );
 }
