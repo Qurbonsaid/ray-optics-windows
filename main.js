@@ -40,15 +40,18 @@ function getIconPath() {
 
 /**
  * Resolve absolute paths (like /gallery or /simulator) to local files
- * Fixed to properly handle Windows paths and path traversal security
  */
 function resolveAbsolutePath(requestPath) {
+  console.log("Resolving path:", requestPath);
+
   // Remove leading slash and normalize
   let normalizedPath = requestPath.replace(/^\/+/, "");
 
   // Handle Windows-style paths that may have drive letter
   normalizedPath = normalizedPath.replace(/^[a-zA-Z]:/, "");
   normalizedPath = normalizedPath.replace(/^\/+/, "");
+
+  console.log("Normalized path:", normalizedPath);
 
   // If path is empty, default to gallery index
   if (!normalizedPath) {
@@ -57,31 +60,45 @@ function resolveAbsolutePath(requestPath) {
 
   // Construct full path
   let fullPath = path.join(WWW_DIR, normalizedPath);
+  console.log("Full path before resolve:", fullPath);
 
   // Normalize and resolve to handle .. and . in paths
   fullPath = path.resolve(fullPath);
+  console.log("Full path after resolve:", fullPath);
 
   // SECURITY: Use path.resolve for proper comparison on Windows
   const normalizedWWW = path.resolve(WWW_DIR);
+  console.log("WWW directory:", normalizedWWW);
 
   // Ensure we're still within WWW_DIR (prevent path traversal)
-  if (!fullPath.startsWith(normalizedWWW + path.sep) && fullPath !== normalizedWWW) {
+  const isInside = fullPath.startsWith(normalizedWWW + path.sep) || fullPath === normalizedWWW;
+  console.log("Is inside WWW?", isInside);
+
+  if (!isInside) {
     console.warn("Path escapes www directory, redirecting to gallery");
     return path.join(WWW_DIR, "gallery", "index.html");
   }
 
   // If it's a directory, look for index.html
-  if (fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory()) {
-    fullPath = path.join(fullPath, "index.html");
+  if (fs.existsSync(fullPath)) {
+    const stats = fs.statSync(fullPath);
+    if (stats.isDirectory()) {
+      console.log("Path is directory, looking for index.html");
+      fullPath = path.join(fullPath, "index.html");
+    }
   }
 
   // If no extension and file doesn't exist, try adding .html
   if (!path.extname(fullPath) && !fs.existsSync(fullPath)) {
     const htmlPath = fullPath + ".html";
     if (fs.existsSync(htmlPath)) {
+      console.log("Found .html version:", htmlPath);
       fullPath = htmlPath;
     }
   }
+
+  console.log("Final resolved path:", fullPath);
+  console.log("File exists?", fs.existsSync(fullPath));
 
   return fullPath;
 }
@@ -163,19 +180,26 @@ function createWindow() {
 
   // Handle navigation to intercept absolute paths and external links
   mainWindow.webContents.on("will-navigate", (event, navigationUrl) => {
+    console.log("=== Navigation Event ===");
+    console.log("URL:", navigationUrl);
+
     try {
       const parsedUrl = new URL(navigationUrl);
+      console.log("Protocol:", parsedUrl.protocol);
+      console.log("Pathname:", parsedUrl.pathname);
 
       // Handle HTTP/HTTPS URLs
       if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
         // Check if it's phydemo.app (canonical URL in HTML)
         if (navigationUrl.includes("phydemo.app")) {
+          console.log("Handling phydemo.app URL");
           // Convert phydemo.app URLs to local file - prevent default navigation
           event.preventDefault();
           const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
           const resolvedPath = resolveAbsolutePath(localPath);
           navigateToLocalFile(resolvedPath, parsedUrl.hash);
         } else {
+          console.log("External URL - opening in browser");
           // External site - open in system browser
           event.preventDefault();
           shell.openExternal(navigationUrl).catch(err => {
@@ -189,24 +213,33 @@ function createWindow() {
       if (parsedUrl.protocol === "file:") {
         // Decode the file path properly
         let filePath = decodeURIComponent(parsedUrl.pathname);
+        console.log("File URL, decoded path:", filePath);
 
         // Fix Windows file paths (remove leading slash from /C:/...)
         if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(filePath)) {
           filePath = filePath.substring(1);
+          console.log("Fixed Windows path:", filePath);
         }
 
         // Check if it's trying to navigate outside www directory
         const normalizedFilePath = path.resolve(filePath);
         const normalizedWWW = path.resolve(WWW_DIR);
 
+        console.log("Checking if path is inside www:");
+        console.log("  File path:", normalizedFilePath);
+        console.log("  WWW path:", normalizedWWW);
+
         // Only intercept if path is outside www directory
         if (!normalizedFilePath.startsWith(normalizedWWW + path.sep) &&
             normalizedFilePath !== normalizedWWW) {
+          console.log("Path is outside www, intercepting");
           event.preventDefault();
 
           // Try to resolve it relative to www folder
           const resolvedPath = resolveAbsolutePath(parsedUrl.pathname);
           navigateToLocalFile(resolvedPath, parsedUrl.hash);
+        } else {
+          console.log("Path is inside www, allowing normal navigation");
         }
         // If inside www directory, let it navigate normally (don't prevent)
       }
@@ -218,6 +251,9 @@ function createWindow() {
 
   // Handle new window requests (target="_blank" links)
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    console.log("=== New Window Request ===");
+    console.log("URL:", targetUrl);
+
     try {
       const parsedUrl = new URL(targetUrl);
 
