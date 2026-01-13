@@ -60,7 +60,7 @@ function resolveAbsolutePath(requestPath) {
   // Normalize and resolve to handle .. and . in paths
   fullPath = path.resolve(fullPath);
 
-  // SECURITY FIX: Use path.resolve for proper comparison on Windows
+  // SECURITY: Use path.resolve for proper comparison on Windows
   const normalizedWWW = path.resolve(WWW_DIR);
 
   // Ensure we're still within WWW_DIR (prevent path traversal)
@@ -102,6 +102,8 @@ function extractPathFromPhydemoUrl(phydemoPath) {
  * Navigate to a local file with proper error handling
  */
 function navigateToLocalFile(filePath, hash = "") {
+  if (!mainWindow) return;
+
   if (fs.existsSync(filePath)) {
     console.log("Navigating to:", filePath, hash ? `with hash: ${hash}` : "");
     mainWindow.loadFile(filePath).then(() => {
@@ -163,18 +165,18 @@ function createWindow() {
     try {
       const parsedUrl = new URL(navigationUrl);
 
-      // Handle external links - open in system browser
+      // Handle HTTP/HTTPS URLs
       if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
-        event.preventDefault();
-
         // Check if it's phydemo.app (canonical URL in HTML)
         if (navigationUrl.includes("phydemo.app")) {
-          // Convert phydemo.app URLs to local file
+          // Convert phydemo.app URLs to local file - prevent default navigation
+          event.preventDefault();
           const localPath = extractPathFromPhydemoUrl(parsedUrl.pathname);
           const resolvedPath = resolveAbsolutePath(localPath);
           navigateToLocalFile(resolvedPath, parsedUrl.hash);
         } else {
           // External site - open in system browser
+          event.preventDefault();
           shell.openExternal(navigationUrl).catch(err => {
             console.error("Failed to open external URL:", err);
           });
@@ -196,6 +198,7 @@ function createWindow() {
         const normalizedFilePath = path.resolve(filePath);
         const normalizedWWW = path.resolve(WWW_DIR);
 
+        // Only intercept if path is outside www directory
         if (!normalizedFilePath.startsWith(normalizedWWW + path.sep) &&
             normalizedFilePath !== normalizedWWW) {
           event.preventDefault();
@@ -204,6 +207,7 @@ function createWindow() {
           const resolvedPath = resolveAbsolutePath(parsedUrl.pathname);
           navigateToLocalFile(resolvedPath, parsedUrl.hash);
         }
+        // If inside www directory, let it navigate normally (don't prevent)
       }
     } catch (err) {
       console.error("Navigation error:", err);
@@ -216,7 +220,7 @@ function createWindow() {
     try {
       const parsedUrl = new URL(targetUrl);
 
-      // External links open in system browser
+      // Handle HTTP/HTTPS URLs
       if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
         if (targetUrl.includes("phydemo.app")) {
           // For phydemo.app URLs, open locally in the same window
@@ -224,7 +228,7 @@ function createWindow() {
           const resolvedPath = resolveAbsolutePath(localPath);
           navigateToLocalFile(resolvedPath, parsedUrl.hash);
         } else {
-          // External site
+          // External site - open in system browser
           shell.openExternal(targetUrl).catch(err => {
             console.error("Failed to open external URL:", err);
           });
