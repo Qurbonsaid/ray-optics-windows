@@ -24,6 +24,17 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Prepare icon
+        shell: pwsh
+        run: |
+          # Download icon from www folder after it's extracted
+          if (Test-Path "www/img/icon.png") {
+            Copy-Item "www/img/icon.png" "icon.png"
+            Write-Host "Icon prepared from www folder"
+          } else {
+            Write-Host "Warning: Icon not found, build may fail"
+          }
+
       - name: Build application
         run: npm run build
 

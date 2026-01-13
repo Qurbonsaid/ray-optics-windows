@@ -65,17 +65,14 @@ function downloadFile(url, dest) {
 
           response.on("data", (chunk) => {
             downloadedSize += chunk.length;
-            if (totalSize) {
-              const percent = Math.round((downloadedSize / totalSize) * 100);
-              process.stdout.write(`\rDownloading... ${percent}%`);
-            }
+            // Progress logging disabled for cleaner CI output
           });
 
           response.pipe(file);
 
           file.on("finish", () => {
             file.close();
-            console.log("\nDownload complete!");
+            console.log("Download complete!");
             resolve();
           });
         })
