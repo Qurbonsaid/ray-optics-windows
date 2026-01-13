@@ -1,0 +1,50 @@
+{
+  "name": "ray-optics-gallery",
+  "version": "1.0.0",
+  "description": "Ray Optics Simulation Gallery - Portable App for Smart Monitors",
+  "main": "main.js",
+  "scripts": {
+    "download": "node scripts/download-release.js && node scripts/setup-icon.js",
+    "prebuild": "npm run download",
+    "prestart": "npm run download",
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build:dir": "electron-builder --win --dir",
+    "clean": "node scripts/clean.js"
+  },
+  "author": "Ray Optics Simulation",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "rayOpticsVersion": "5.2.0",
+  "build": {
+    "appId": "app.phydemo.ray-optics-gallery",
+    "productName": "Ray Optics Gallery",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png",
+      "www/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "icon.png"
+    },
+    "portable": {
+      "artifactName": "RayOpticsGallery-Portable.exe"
+    }
+  }
+}

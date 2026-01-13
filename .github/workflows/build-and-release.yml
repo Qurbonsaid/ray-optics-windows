@@ -1,0 +1,102 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Get package version
+        id: package-version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get Ray Optics version
+        id: ray-optics-version
+        shell: bash
+        run: |
+          RAY_VERSION=$(node -p "require('./package.json').rayOpticsVersion")
+          echo "ray_version=$RAY_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Delete existing release if it exists
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Try to get the release ID
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ steps.package-version.outputs.version }}" \
+            | jq -r '.id // empty')
+
+          # Delete the release if it exists
+          if [ ! -z "$RELEASE_ID" ]; then
+            echo "Deleting existing release with ID: $RELEASE_ID"
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
+          fi
+
+          # Delete the tag if it exists
+          git push --delete origin "v${{ steps.package-version.outputs.version }}" 2>/dev/null || true
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          name: Ray Optics Gallery v${{ steps.package-version.outputs.version }}
+          body: |
+            ## Ray Optics Gallery v${{ steps.package-version.outputs.version }}
+
+            A portable Windows application for Ray Optics Simulation, designed for smart monitors and interactive whiteboards.
+
+            ### Download
+            Download the portable executable below. No installation required - just run the .exe file!
+
+            ### What's Included
+            - **Ray Optics Simulation** v${{ steps.ray-optics-version.outputs.ray_version }}
+            - **Fullscreen Mode** - Optimized for smart monitors
+            - **Offline Capable** - All assets bundled
+            - **Keyboard Shortcuts** - F11 (fullscreen), F5 (refresh), Escape (exit fullscreen)
+
+            ### System Requirements
+            - Windows 10 or higher
+            - 64-bit or 32-bit architecture supported
+
+            ### Changes
+            - Latest build from commit: ${{ github.sha }}
+            - Build date: ${{ github.event.head_commit.timestamp }}
+
+            **Note:** This is a continuously updated release. The executable is automatically rebuilt with each push to the main branch.
+
+            ---
+            **Credits:** [Ray Optics Simulation](https://phydemo.app/ray-optics/) by [Yi-Ting Tu](https://github.com/ricktu288)
+          files: |
+            dist/*.exe
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

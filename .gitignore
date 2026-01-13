@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Downloaded Ray Optics files (auto-downloaded during build)
+www/
+.cache/
+
+# Icon copied from www during build
+icon.png
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+tmpclaude-*
+
+# Claude Code files
+.claude/
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
