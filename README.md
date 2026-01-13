@@ -17,9 +17,9 @@ A portable Windows application that wraps the [Ray Optics Simulation](https://ph
 - npm
 
 ### For Running
-- Windows 7 or higher (64-bit or 32-bit)
+- Windows 10 or higher (64-bit or 32-bit)
 
-## Building
+## Building Locally
 
 ### Quick Build
 
@@ -46,6 +46,47 @@ npm run build:dir  # Build unpacked (for testing)
 npm run clean      # Remove downloaded files
 ```
 
+## Creating a Release
+
+### Automatic (GitHub Actions)
+
+This project uses GitHub Actions to automatically build releases. To save on usage minutes, builds are triggered:
+
+1. **Manually** via GitHub Actions UI
+2. **Automatically** when you push a version tag
+
+#### Method 1: Manual Trigger (Recommended for Testing)
+
+1. Go to https://github.com/Qurbonsaid/ray-optics-windows/actions
+2. Click "Build and Release" workflow
+3. Click "Run workflow" button
+4. Select the main branch
+5. Click "Run workflow"
+
+#### Method 2: Create a Release Tag
+
+```bash
+# Using the helper script
+./release.sh 1.0.1
+
+# Or manually
+git tag -a v1.0.1 -m "Release v1.0.1"
+git push origin v1.0.1
+```
+
+The workflow will automatically:
+- Build the Windows portable executable
+- Create/update the release
+- Upload the .exe file
+
+### Why This Approach?
+
+GitHub Actions has usage limits:
+- **Free accounts**: 2,000 minutes/month for private repos
+- **Windows runners**: Count as 2x minutes (1 minute build = 2 usage minutes)
+
+By using manual triggers or tags, you control when builds happen and save your monthly quota.
+
 ## Updating Ray Optics Version
 
 Edit `package.json` and change:
@@ -62,9 +103,14 @@ windows-app/
 ├── main.js              # Electron main process
 ├── preload.js           # Preload script
 ├── package.json         # Config and dependencies
+├── icon.ico             # Windows icon (256x256+)
+├── icon.png             # Fallback icon
 ├── scripts/
 │   ├── download-release.js  # Downloads Ray Optics
 │   └── clean.js             # Cleanup script
+├── .github/
+│   └── workflows/
+│       └── build-and-release.yml  # GitHub Actions workflow
 ├── www/                 # Ray Optics files (auto-downloaded)
 ├── .cache/              # Downloaded zip cache
 └── dist/                # Built executables
@@ -93,6 +139,18 @@ Edit `main.js` to change:
 | F11 | Toggle fullscreen |
 | Escape | Exit fullscreen |
 | F5 | Refresh page |
+| Ctrl+Shift+I | Open DevTools (debugging) |
+
+## Troubleshooting
+
+### Build fails with "icon must be at least 256x256"
+The icon.ico file must be at least 256x256 pixels. The repository includes a proper icon file.
+
+### Navigation not working
+Make sure you're using the latest version of main.js with proper path resolution fixes.
+
+### Build quota exceeded
+If you hit GitHub Actions limits, use manual workflow triggers or build locally instead.
 
 ## License
 
