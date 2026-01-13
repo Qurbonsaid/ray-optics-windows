@@ -5,6 +5,7 @@ const {
   screen,
   shell,
   protocol,
+  ipcMain,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -301,6 +302,15 @@ function createWindow() {
     }
   );
 }
+
+// Handle IPC messages from renderer
+ipcMain.on("close-app", () => {
+  console.log("Exit button clicked - closing app");
+  if (mainWindow) {
+    mainWindow.close();
+  }
+  app.quit();
+});
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
