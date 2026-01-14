@@ -44,14 +44,62 @@ function getIconPath() {
 function resolveAbsolutePath(requestPath) {
   console.log("Resolving path:", requestPath);
 
-  // Remove leading slash and normalize
-  let normalizedPath = requestPath.replace(/^\/+/, "");
+  // First, check if requestPath is already an absolute path within www directory
+  let normalizedPath = requestPath;
+  
+  // Handle Windows file URLs (e.g., /C:/Users/.../www/gallery/...)
+  if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(normalizedPath)) {
+    normalizedPath = normalizedPath.substring(1); // Remove leading slash
+  }
+  
+  // Decode URI components
+  try {
+    normalizedPath = decodeURIComponent(normalizedPath);
+  } catch (e) {
+    // Already decoded or invalid encoding
+  }
+  
+  // Convert to proper path and resolve
+  normalizedPath = path.resolve(normalizedPath);
+  const normalizedWWW = path.resolve(WWW_DIR).toLowerCase();
+  
+  console.log("Checking if path is already within www:", normalizedPath);
+  
+  // Check if the path is already a full path within the www directory
+  if (normalizedPath.toLowerCase().startsWith(normalizedWWW)) {
+    console.log("Path is already within www, using directly");
+    let fullPath = normalizedPath;
+    
+    // If it's a directory, look for index.html
+    if (fs.existsSync(fullPath)) {
+      const stats = fs.statSync(fullPath);
+      if (stats.isDirectory()) {
+        console.log("Path is directory, looking for index.html");
+        fullPath = path.join(fullPath, "index.html");
+      }
+    }
+    
+    // If no extension and file doesn't exist, try adding .html
+    if (!path.extname(fullPath) && !fs.existsSync(fullPath)) {
+      const htmlPath = fullPath + ".html";
+      if (fs.existsSync(htmlPath)) {
+        console.log("Found .html version:", htmlPath);
+        fullPath = htmlPath;
+      }
+    }
+    
+    console.log("Final resolved path:", fullPath);
+    return fullPath;
+  }
+  
+  // Otherwise, treat as a relative path from www root
+  normalizedPath = requestPath.replace(/^\/+/, "");
 
   // Handle Windows-style paths that may have drive letter
-  normalizedPath = normalizedPath.replace(/^[a-zA-Z]:/, "");
+  normalizedPath = normalizedPath.replace(/^[a-zA-Z]:[\\\/]?/, "");
   normalizedPath = normalizedPath.replace(/^\/+/, "");
 
-  console.log("Normalized path:", normalizedPath);
+  console.log("Normalized relative path:", normalizedPath);
 
   // If path is empty, default to gallery index
   if (!normalizedPath) {
@@ -66,12 +114,11 @@ function resolveAbsolutePath(requestPath) {
   fullPath = path.resolve(fullPath);
   console.log("Full path after resolve:", fullPath);
 
-  // SECURITY: Use path.resolve for proper comparison on Windows
-  const normalizedWWW = path.resolve(WWW_DIR);
+  // SECURITY: Use path.resolve for proper comparison on Windows (case-insensitive)
   console.log("WWW directory:", normalizedWWW);
 
-  // Ensure we're still within WWW_DIR (prevent path traversal)
-  const isInside = fullPath.startsWith(normalizedWWW + path.sep) || fullPath === normalizedWWW;
+  // Ensure we're still within WWW_DIR (prevent path traversal) - case insensitive on Windows
+  const isInside = fullPath.toLowerCase().startsWith(normalizedWWW + path.sep) || fullPath.toLowerCase() === normalizedWWW;
   console.log("Is inside WWW?", isInside);
 
   if (!isInside) {
@@ -148,6 +195,65 @@ function navigateToLocalFile(filePath, hash = "") {
   }
 }
 
+/**
+ * Ensure exit button exists on the page (inject from main process)
+ */
+function ensureExitButton() {
+  if (!mainWindow) return;
+  
+  const injectScript = `
+    (function() {
+      function createExitButton() {
+        if (document.getElementById("exit-button-container")) return;
+        if (!document.body) {
+          setTimeout(createExitButton, 100);
+          return;
+        }
+        
+        const container = document.createElement("div");
+        container.id = "exit-button-container";
+        container.style.cssText = "position:fixed;top:10px;right:10px;z-index:999999;opacity:0.3;transition:opacity 0.3s ease;";
+        
+        const button = document.createElement("div");
+        button.id = "exit-button";
+        button.title = "Exit Application";
+        button.textContent = "×";
+        button.style.cssText = "width:32px;height:24px;background:rgba(220,53,69,0.9);border:1px solid rgba(255,255,255,0.8);border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;color:white;font-weight:bold;box-shadow:0 1px 5px rgba(0,0,0,0.3);transition:all 0.2s ease;user-select:none;";
+        
+        button.addEventListener("mouseenter", function() { button.style.background="rgba(220,53,69,1)"; button.style.transform="scale(1.05)"; container.style.opacity="1"; });
+        button.addEventListener("mouseleave", function() { button.style.background="rgba(220,53,69,0.9)"; button.style.transform="scale(1)"; container.style.opacity="0.3"; });
+        button.addEventListener("click", function() { 
+          if(window.electronAPI && window.electronAPI.closeApp) {
+            window.electronAPI.closeApp();
+          }
+        });
+        
+        container.appendChild(button);
+        document.body.appendChild(container);
+        
+        var hideTimeout;
+        function showButton() { 
+          container.style.opacity="1"; 
+          clearTimeout(hideTimeout); 
+          hideTimeout=setTimeout(function(){container.style.opacity="0.3";},3000); 
+        }
+        document.addEventListener("mousemove", showButton);
+        document.addEventListener("touchstart", showButton);
+        
+        console.log("Exit button injected successfully");
+      }
+      
+      // Try immediately and also with a delay
+      createExitButton();
+      setTimeout(createExitButton, 200);
+    })();
+  `;
+  
+  mainWindow.webContents.executeJavaScript(injectScript).catch(err => {
+    console.error("Failed to inject exit button:", err);
+  });
+}
+
 function createWindow() {
   // Get primary display dimensions for fullscreen kiosk mode (ideal for smart monitors)
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -171,6 +277,12 @@ function createWindow() {
 
   // Remove menu bar completely
   Menu.setApplicationMenu(null);
+
+  // Inject exit button after every page load
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.log("Page finished loading, injecting exit button");
+    ensureExitButton();
+  });
 
   // Load the gallery page directly
   const galleryPath = path.join(WWW_DIR, "gallery", "index.html");
@@ -221,27 +333,13 @@ function createWindow() {
           console.log("Fixed Windows path:", filePath);
         }
 
-        // Check if it's trying to navigate outside www directory
-        const normalizedFilePath = path.resolve(filePath);
-        const normalizedWWW = path.resolve(WWW_DIR);
-
-        console.log("Checking if path is inside www:");
-        console.log("  File path:", normalizedFilePath);
-        console.log("  WWW path:", normalizedWWW);
-
-        // Only intercept if path is outside www directory
-        if (!normalizedFilePath.startsWith(normalizedWWW + path.sep) &&
-            normalizedFilePath !== normalizedWWW) {
-          console.log("Path is outside www, intercepting");
-          event.preventDefault();
-
-          // Try to resolve it relative to www folder
-          const resolvedPath = resolveAbsolutePath(parsedUrl.pathname);
-          navigateToLocalFile(resolvedPath, parsedUrl.hash);
-        } else {
-          console.log("Path is inside www, allowing normal navigation");
-        }
-        // If inside www directory, let it navigate normally (don't prevent)
+        // Always intercept file:// URLs to properly resolve .html extensions
+        event.preventDefault();
+        
+        // Resolve the path (adds .html extension, handles directories, etc.)
+        const resolvedPath = resolveAbsolutePath(filePath);
+        console.log("Resolved file path:", resolvedPath);
+        navigateToLocalFile(resolvedPath, parsedUrl.hash);
       }
     } catch (err) {
       console.error("Navigation error:", err);

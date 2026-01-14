@@ -43,10 +43,26 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// Also try to inject on load event as a fallback
+window.addEventListener("load", () => {
+  injectExitButton();
+});
+
 /**
  * Inject exit button into the page for touchscreen devices
  */
 function injectExitButton() {
+  // Check if button already exists (prevent duplicates)
+  if (document.getElementById("exit-button-container")) {
+    return;
+  }
+  
+  // Wait for body to be available
+  if (!document.body) {
+    setTimeout(injectExitButton, 50);
+    return;
+  }
+  
   // Create container
   const container = document.createElement("div");
   container.id = "exit-button-container";
@@ -59,25 +75,25 @@ function injectExitButton() {
     transition: opacity 0.3s ease;
   `;
 
-  // Create button
+  // Create button - smaller and rectangular
   const button = document.createElement("div");
   button.id = "exit-button";
   button.title = "Exit Application";
   button.textContent = "×";
   button.style.cssText = `
-    width: 50px;
-    height: 50px;
+    width: 32px;
+    height: 24px;
     background: rgba(220, 53, 69, 0.9);
-    border: 2px solid rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 4px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 18px;
     color: white;
     font-weight: bold;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
     transition: all 0.2s ease;
     user-select: none;
   `;
@@ -85,15 +101,15 @@ function injectExitButton() {
   // Add hover effects
   button.addEventListener("mouseenter", () => {
     button.style.background = "rgba(220, 53, 69, 1)";
-    button.style.transform = "scale(1.1)";
-    button.style.boxShadow = "0 4px 15px rgba(0, 0, 0, 0.4)";
+    button.style.transform = "scale(1.05)";
+    button.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.4)";
     container.style.opacity = "1";
   });
 
   button.addEventListener("mouseleave", () => {
     button.style.background = "rgba(220, 53, 69, 0.9)";
     button.style.transform = "scale(1)";
-    button.style.boxShadow = "0 2px 10px rgba(0, 0, 0, 0.3)";
+    button.style.boxShadow = "0 1px 5px rgba(0, 0, 0, 0.3)";
     container.style.opacity = "0.3";
   });
 
@@ -132,11 +148,11 @@ function injectExitButton() {
   document.addEventListener("mousemove", showButton);
   document.addEventListener("touchstart", showButton);
 
-  // Make button larger on touch devices
+  // Make button slightly larger on touch devices but keep rectangular
   if (window.matchMedia("(pointer: coarse)").matches) {
-    button.style.width = "60px";
-    button.style.height = "60px";
-    button.style.fontSize = "32px";
+    button.style.width = "40px";
+    button.style.height = "30px";
+    button.style.fontSize = "22px";
     container.style.opacity = "0.5";
   }
 }
